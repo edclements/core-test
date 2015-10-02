@@ -2867,7 +2867,7 @@ function getURIparam( name ){
       return $scope.bb.isAdmin;
     };
     $scope.isAdminIFrame = function() {
-      var err, location;
+      var err, error, location;
       if (!$scope.bb.isAdmin) {
         return false;
       }
@@ -2878,8 +2878,8 @@ function getURIparam( name ){
         } else {
           return false;
         }
-      } catch (_error) {
-        err = _error;
+      } catch (error) {
+        err = error;
         return false;
       }
     };
@@ -9011,12 +9011,12 @@ function getURIparam( name ){
 
 (function() {
   angular.module('BB.Directives').directive('bbDatepickerPopup', function($parse, $document, $timeout, $bbug) {
-    var e, ie8orLess;
+    var e, error, ie8orLess;
     ie8orLess = false;
     try {
       ie8orLess = window.parseInt(/MSIE\s*(\d)/.exec(window.navigator.userAgent)[1]);
-    } catch (_error) {
-      e = _error;
+    } catch (error) {
+      e = error;
       ie8orLess = false;
     }
     return {
@@ -11038,7 +11038,7 @@ function getURIparam( name ){
   angular.module("BB.Directives").directive('scoped', function($document, $timeout) {
     var scopeIt;
     this.compat = (function() {
-      var DOMRules, DOMStyle, changeSelectorTextAllowed, check, e, scopeSupported, testSheet, testStyle;
+      var DOMRules, DOMStyle, changeSelectorTextAllowed, check, e, error, scopeSupported, testSheet, testStyle;
       check = document.createElement('style');
       if (typeof check.sheet !== 'undefined') {
         DOMStyle = 'sheet';
@@ -11059,8 +11059,8 @@ function getURIparam( name ){
       testStyle = testSheet[DOMRules][0];
       try {
         testStyle.selectorText = 'd';
-      } catch (_error) {
-        e = _error;
+      } catch (error) {
+        e = error;
       }
       changeSelectorTextAllowed = 'd' === testStyle.selectorText.toLowerCase();
       check.parentNode.removeChild(check);
@@ -19355,11 +19355,11 @@ if (! ("JSON" in window && window.JSON)){JSON={}}(function(){function f(n){retur
         _.each(listenerArr, function(item, index) {
           var func;
           func = $rootScope.$on(item[1], function() {
-            var e;
+            var e, error;
             try {
               return cpage[2][item[0]] = 'data:destroyed';
-            } catch (_error) {
-              e = _error;
+            } catch (error) {
+              e = error;
               return log(e);
             }
           });
