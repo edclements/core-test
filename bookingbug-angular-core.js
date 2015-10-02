@@ -475,9 +475,13 @@ angular
         }));
 
         var linkHref = hrefLink(link, params);
-
         if(method === 'GET') {
-          if(embedded.has(linkHref)) return embedded.get(linkHref);
+          if (params) {
+            if (params.hasOwnProperty('no_cache')) {
+              options['no_cache'] = params['no_cache'];
+            }
+          }
+          if(embedded.has(linkHref) && (!options || !options.no_cache)) return embedded.get(linkHref);
           
           return embedded.set(linkHref, callService(method, linkHref, options, data));
         }
@@ -2954,10 +2958,11 @@ function getURIparam( name ){
     };
   });
 
-  angular.module('BB.Controllers').controller('BasketList', function($scope, $rootScope, BasketService, $q, AlertService, ErrorService, FormDataStoreService) {
+  angular.module('BB.Controllers').controller('BasketList', function($scope, $rootScope, BasketService, $q, AlertService, ErrorService, FormDataStoreService, LoginService) {
     $scope.controller = "public.controllers.BasketList";
     $scope.setUsingBasket(true);
     $scope.items = $scope.bb.basket.items;
+    $scope.show_wallet = $scope.bb.company_settings.hasOwnProperty('has_wallets') && $scope.bb.company_settings.has_wallets && $scope.client.valid() && LoginService.isLoggedIn() && LoginService.member().id === $scope.client.id;
     $scope.$watch('basket', (function(_this) {
       return function(newVal, oldVal) {
         return $scope.items = _.filter($scope.bb.basket.items, function(item) {
@@ -3083,6 +3088,9 @@ function getURIparam( name ){
         });
       };
     })(this);
+    $scope.topUpWallet = function() {
+      return $scope.decideNextPage("basket_wallet");
+    };
     return $scope.setReady = function() {
       if ($scope.bb.basket.items.length > 0) {
         return $scope.setReadyToCheckout(true);
@@ -3329,8 +3337,10 @@ function getURIparam( name ){
     })(this);
     $scope.setReady = (function(_this) {
       return function() {
+        var prom;
         $scope.client.setClientDetails($scope.client_details);
-        ClientService.create_or_update($scope.bb.company, $scope.client).then(function(client) {
+        prom = ClientService.create_or_update($scope.bb.company, $scope.client);
+        prom.then(function(client) {
           $scope.setLoaded($scope);
           $scope.setClient(client);
           if (client.waitingQuestions) {
@@ -3341,7 +3351,7 @@ function getURIparam( name ){
         }, function(err) {
           return $scope.setLoadedAndShowError($scope, err, 'Sorry, something went wrong');
         });
-        return true;
+        return prom;
       };
     })(this);
     $scope.clientSearch = function() {
@@ -4112,6 +4122,7 @@ function getURIparam( name ){
               for (c = j = 1, ref1 = ticket.qty; 1 <= ref1 ? j <= ref1 : j >= ref1; c = 1 <= ref1 ? ++j : --j) {
                 item = new BBModel.BasketItem();
                 angular.extend(item, base_item);
+                delete item.id;
                 item.tickets = angular.copy(ticket);
                 item.tickets.qty = 1;
                 $scope.bb.stackItem(item);
@@ -4121,6 +4132,7 @@ function getURIparam( name ){
               item = new BBModel.BasketItem();
               angular.extend(item, base_item);
               item.tickets = angular.copy(ticket);
+              delete item.id;
               item.tickets.qty = ticket.qty;
               $scope.bb.stackItem(item);
           }
@@ -4855,6 +4867,7 @@ function getURIparam( name ){
         var item;
         if (attrs.bbItemDetails) {
           item = scope.$eval(attrs.bbItemDetails);
+          scope.item_from_param = item;
           scope.loadItem(item);
         }
       }
@@ -4876,7 +4889,6 @@ function getURIparam( name ){
     $scope.validator = ValidatorService;
     confirming = false;
     $rootScope.connection_started.then(function() {
-      $scope.product = $scope.bb.current_item.product;
       if (!confirming) {
         return $scope.loadItem($scope.bb.current_item);
       }
@@ -4890,6 +4902,7 @@ function getURIparam( name ){
       if ($scope.bb.private_note) {
         $scope.item.private_note = $scope.bb.private_note;
       }
+      $scope.product = item.product;
       if ($scope.item.item_details) {
         setItemDetails($scope.item.item_details);
         QuestionService.addDynamicAnswersByName($scope.item_details.questions);
@@ -4944,6 +4957,13 @@ function getURIparam( name ){
       }
       return $scope.item_details = details;
     };
+    $scope.$on('currentItemUpdate', function(service) {
+      if ($scope.item_from_param) {
+        return $scope.loadItem($scope.item_from_param);
+      } else {
+        return $scope.loadItem($scope.bb.current_item);
+      }
+    });
     $scope.recalc_price = function() {
       var bprice, qprice;
       qprice = $scope.item_details.questionPrice($scope.item.getQty());
@@ -5004,7 +5024,7 @@ function getURIparam( name ){
           $scope.decideNextPage(route);
           if (SettingsService.isInternationalizatonEnabled()) {
             return $translate('MOVE_BOOKINGS_MSG', {
-              datetime: b.datetime.format('dddd Do MMMM [at] h.mma')
+              datetime: b.datetime.format('dddd Do MMMM[,] h.mma')
             }).then(function(translated_text) {
               return AlertService.add("info", {
                 msg: translated_text
@@ -5012,7 +5032,7 @@ function getURIparam( name ){
             });
           } else {
             return AlertService.add("info", {
-              msg: "Your booking has been moved to " + (b.datetime.format('dddd Do MMMM [at] h.mma'))
+              msg: "Your booking has been moved to " + (b.datetime.format('dddd Do MMMM[,] h.mma'))
             });
           }
         }, (function(_this) {
@@ -5286,12 +5306,16 @@ function getURIparam( name ){
           latlong = new google.maps.LatLng(comp.address.lat, comp.address.long);
           $scope.mapBounds.extend(latlong);
         }
+        $scope.mapOptions = {
+          center: $scope.mapBounds.getCenter(),
+          zoom: 6,
+          mapTypeId: google.maps.MapTypeId.ROADMAP,
+          mapTypeControl: true,
+          mapTypeControlOptions: {
+            style: window.google.maps.MapTypeControlStyle.DROPDOWN_MENU
+          }
+        };
       }
-      $scope.mapOptions = {
-        center: $scope.mapBounds.getCenter(),
-        zoom: 6,
-        mapTypeId: google.maps.MapTypeId.ROADMAP
-      };
       if (options && options.map_options) {
         ref1 = options.map_options;
         for (key in ref1) {
@@ -6158,6 +6182,7 @@ function getURIparam( name ){
           setEnabledSlots();
           updateHideStatus();
           $rootScope.$broadcast("TimeRangeListStacked:loadFinished");
+          $scope.$broadcast("dataReloaded");
         } else {
 
         }
@@ -6842,7 +6867,9 @@ function getURIparam( name ){
       element.find('iframe').bind('load', (function(_this) {
         return function(event) {
           var origin, url;
-          url = scope.bb.total.$href('new_payment');
+          if (scope.bb && scope.bb.total && scope.bb.total.$href('new_payment')) {
+            url = scope.bb.total.$href('new_payment');
+          }
           origin = getHost(url);
           sendLoadEvent(element, origin, scope);
           return scope.$apply(function() {
@@ -6895,7 +6922,9 @@ function getURIparam( name ){
         if ($scope.total) {
           $scope.bb.total = $scope.total;
         }
-        return $scope.url = $sce.trustAsResourceUrl($scope.bb.total.$href('new_payment'));
+        if ($scope.bb && $scope.bb.total && $scope.bb.total.$href('new_payment')) {
+          return $scope.url = $sce.trustAsResourceUrl($scope.bb.total.$href('new_payment'));
+        }
       };
     })(this));
     $scope.callNotLoaded = (function(_this) {
@@ -8397,7 +8426,7 @@ function getURIparam( name ){
       $scope.data_source = $scope.bb.current_item;
     }
     $rootScope.connection_started.then(function() {
-      var diff, selected_day, start_date;
+      var date, diff, selected_day, start_date;
       $scope.options = $scope.$eval($attrs.bbTimeRanges) || {};
       if ($attrs.bbTimeRangeLength != null) {
         $scope.time_range_length = $scope.$eval($attrs.bbTimeRangeLength);
@@ -8426,8 +8455,9 @@ function getURIparam( name ){
         } else {
           setTimeRange($scope.last_selected_date);
         }
-      } else if ($scope.bb.current_item.date) {
-        setTimeRange($scope.bb.current_item.date.date);
+      } else if ($scope.bb.current_item.date || $scope.bb.current_item.requested_date) {
+        date = $scope.bb.current_item.date ? $scope.bb.current_item.date.date : $scope.bb.current_item.requested_date;
+        setTimeRange(date);
       } else if ($scope.selected_day) {
         $scope.original_start_date = $scope.original_start_date || moment($scope.selected_day);
         setTimeRange($scope.selected_day);
@@ -12445,7 +12475,7 @@ angular.module('BB.Services').provider("ie8HttpBackend", function ie8HttpBackend
       fn1(model);
     }
     funcs['Purchase'] = pfuncs;
-    member_models = ['Member', 'Booking', 'PrePaidBooking'];
+    member_models = ['Member', 'Booking', 'PrePaidBooking', 'Wallet', 'WalletLog'];
     mfuncs = {};
     fn2 = (function(_this) {
       return function(model) {
@@ -13608,6 +13638,8 @@ angular.module('BB.Services').provider("ie8HttpBackend", function ie8HttpBackend
             this.setPrice(this.price);
           } else if (this.time.price && !this.price) {
             this.setPrice(this.time.price);
+          } else if (this.price && this.time.price) {
+            this.setPrice(this.price);
           } else {
             this.setPrice(null);
           }
@@ -14654,11 +14686,27 @@ angular.module('BB.Services').provider("ie8HttpBackend", function ie8HttpBackend
 
       function Company(data) {
         this.pusherSubscribe = bind(this.pusherSubscribe, this);
+        var all_companies, c, child, comp, i, j, len, len1, ref1, ref2;
         Company.__super__.constructor.call(this, data);
         if (this.companies) {
-          this.companies = _.map(this.companies, function(c) {
-            return new BBModel.Company(halClient.$parse(c));
-          });
+          all_companies = [];
+          this.child_companies = [];
+          ref1 = this.companies;
+          for (i = 0, len = ref1.length; i < len; i++) {
+            comp = ref1[i];
+            c = new BBModel.Company(halClient.$parse(comp));
+            this.child_companies.push(c);
+            if (c.companies) {
+              ref2 = c.companies;
+              for (j = 0, len1 = ref2.length; j < len1; j++) {
+                child = ref2[j];
+                all_companies.push(child);
+              }
+            } else {
+              all_companies.push(c);
+            }
+          }
+          this.companies = all_companies;
         }
       }
 
@@ -14853,8 +14901,16 @@ angular.module('BB.Services').provider("ie8HttpBackend", function ie8HttpBackend
 
 }).call(this);
 
+
+/***
+* @ngdoc object
+* @name BB.Models:EventModel
+*
+* @description
+* This is the event object returned by the API
+ */
+
 (function() {
-  'use strict';
   var extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
     hasProp = {}.hasOwnProperty;
 
@@ -15067,6 +15123,7 @@ angular.module('BB.Services').provider("ie8HttpBackend", function ie8HttpBackend
                 _this.price_range.from = _this.price;
                 _this.price_range.to = _this.price;
               }
+              _this.ticket_prices = _.indexBy(tickets, 'name');
               return def.resolve();
             });
           };
@@ -19748,7 +19805,7 @@ if (! ("JSON" in window && window.JSON)){JSON={}}(function(){function f(n){retur
       },
       isLoggedIn: function() {
         this.checkLogin();
-        if ($rootScope.member && !$rootScope.user) {
+        if ($rootScope.member && (!$rootScope.user || $rootScope.user === void 0)) {
           return true;
         } else {
           return false;
